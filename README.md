@@ -152,6 +152,27 @@ It's been tested to work on other arch based distros with hyprland installed (fr
 
 ## 🔧 Troubleshooting
 
+### Python Dependencies Installed, But Textual Imports Fail
+
+If the traceback points to `~/.local/lib/python*/site-packages/textual`, an older
+`pip --user` installation may be overriding the package installed by pacman.
+Reinstalling `python-textual` does not remove or update that user installation.
+
+Run `user_scripts/arch_setup_scripts/orchestrator.sh` as your normal user. The
+wrapper disables user-site packages for its checks, UI, and setup tasks, while
+keeping the required Textual API and version checks. Failed checks now print the
+Python executable, module locations, versions, and traceback instead of repeatedly
+reinstalling the same packages.
+
+To check the system package independently:
+
+```bash
+python3 -s -c 'import textual; from importlib.metadata import version; from textual import work; print(textual.__file__, version("textual"))'
+```
+
+`--offline` does not bypass dependency requirements. Do not bypass missing Textual
+APIs or run the orchestrator as root to work around an import failure.
+
 If a script fails (which can happen on a rolling release distro):
 
 1. **Don't Panic.** The scripts are modular. The rest of the system usually installs fine.
@@ -317,4 +338,3 @@ sddm is a modified version of the SilentSDDM project by @uiriansan (this is a gr
 [SilentSDDM by uiriansan][repo_linkk]
 
 [repo_linkk]: https://github.com/uiriansan/SilentSDDM/
-
