@@ -133,6 +133,8 @@ try:
     from textual.widgets.tree import TreeNode
 except ImportError as exc:
     sys.stderr.write(f"[FATAL] Missing Python dependencies: {exc}\n")
+    sys.stderr.write(f"Interpreter: {sys.executable}\n")
+    sys.stderr.write("Run orchestrator.sh to use system packages without pip --user overrides.\n")
     sys.stderr.write("Install: python-textual python-rich\n")
     sys.exit(8)
 
@@ -1494,6 +1496,7 @@ class SudoEngine:
             "PYTHONUNBUFFERED",
             "PYTHONUTF8",
             "PYTHONDONTWRITEBYTECODE",
+            "PYTHONNOUSERSITE",
             "PAGER",
             "SYSTEMD_PAGER",
             "GIT_PAGER",
@@ -5998,6 +6001,7 @@ class DuskyOrchestratorApp(App):
                 "PYTHONUNBUFFERED": "1",
                 "PYTHONUTF8": "1",
                 "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONNOUSERSITE": "1",
                 "PAGER": "cat",
                 "SYSTEMD_PAGER": "cat",
                 "GIT_PAGER": "cat",

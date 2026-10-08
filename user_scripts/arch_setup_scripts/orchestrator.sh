@@ -117,7 +117,53 @@ require_internet() {
 }
 
 python_ok() {
-    "$1" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 14, 7) else 1)' >/dev/null 2>&1
+    "$1" -s -c 'import sys; sys.exit(0 if sys.version_info >= (3, 14, 7) else 1)' >/dev/null 2>&1
+}
+
+check_python_runtime() {
+    local output
+    if output="$("$1" -s - 2>&1 <<'PY'
+import importlib.util
+import re
+import site
+import sys
+from importlib.metadata import version
+
+print(f"Python: {sys.executable} ({sys.version.split()[0]})", flush=True)
+print(f"User site enabled: {site.ENABLE_USER_SITE}", flush=True)
+print(f"Ignored user site: {site.getusersitepackages()}", flush=True)
+for name in ("textual", "rich"):
+    spec = importlib.util.find_spec(name)
+    print(f"{name} module: {spec.origin if spec else 'not found'}", flush=True)
+    print(f"{name} version: {version(name)}", flush=True)
+
+import tomllib
+from rich.console import Console
+from rich.markup import escape
+from rich.text import Text
+from textual import work, on, events
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Container, Horizontal, Vertical
+from textual.screen import ModalScreen
+from textual.widgets import (
+    Static, RichLog, ProgressBar, Button, Label, Tree, Input, OptionList,
+    ContentSwitcher,
+)
+from textual.widgets.option_list import Option
+from textual.widgets.tree import TreeNode
+
+parsed = (tuple(map(int, re.findall(r"\d+", version("textual")))) + (0, 0, 0))[:3]
+if parsed < (8, 2, 8):
+    raise RuntimeError(f"Textual 8.2.8+ is required; found {version('textual')}")
+PY
+    )"; then
+        return 0
+    fi
+    log ERROR "Python runtime check failed with user-site packages disabled."
+    printf '%s\n' "$output" >&2
+    log ERROR "Check the module paths and traceback above. Installed packages will not be blindly reinstalled."
+    return 1
 }
 
 choose_python() {
@@ -152,6 +198,10 @@ main() {
         LD_PROFILE LD_SHOW_AUXV LD_USE_LOAD_BIAS PYTHONSTARTUP PYTHONHOME \
         PYTHONPATH PERL5LIB RUBYLIB NODE_OPTIONS 2>/dev/null || true
 
+    # Old pip --user packages can shadow dependencies installed by pacman.
+    # Inherit this setting in Python setup scripts as well as the main UI.
+    export PYTHONNOUSERSITE=1
+
     local offline=0 info_only=0 arg
     for arg in "$@"; do
         case "$arg" in
@@ -166,6 +216,10 @@ main() {
             log ERROR "Python 3.14.7+ is required for this command."
             exit 1
         fi
+        case " $* " in
+            *" --help "*|*" -h "*|*" --version "*) ;;
+            *) check_python_runtime "$info_python" || exit 1 ;;
+        esac
         launch_python "$info_python" "$@"
     fi
 
@@ -225,22 +279,7 @@ main() {
         exit 1
     fi
 
-    if ! "$PYTHON_BIN" -c 'import textual, rich, tomllib; from importlib.metadata import version; import re, sys; sys.exit(tuple(map(int, re.findall(r"\d+", version("textual"))[:3])) < (8, 2, 8))' >/dev/null 2>&1; then
-        if (( offline )); then
-            log ERROR "Python dependencies are unusable in offline mode."
-            exit 1
-        fi
-        log WARN "Python runtime imports failed. Reinstalling dependency packages..."
-        if (( ${#sudo_cmd[@]} > 0 )); then
-            sudo -v
-        fi
-        require_internet
-        "${sudo_cmd[@]}" pacman -Syu --noconfirm python-textual python-rich
-        if ! "$PYTHON_BIN" -c 'import textual, rich, tomllib; from importlib.metadata import version; import re, sys; sys.exit(tuple(map(int, re.findall(r"\d+", version("textual"))[:3])) < (8, 2, 8))' >/dev/null 2>&1; then
-            log ERROR "Python dependencies are still unusable."
-            exit 1
-        fi
-    fi
+    check_python_runtime "$PYTHON_BIN" || exit 1
 
     if (( ! offline )); then
         require_internet
@@ -278,18 +317,20 @@ launch_python() {
             USER="$SUDO_USER" \
             LOGNAME="$SUDO_USER" \
             SHELL="$target_shell" \
+            PYTHONNOUSERSITE=1 \
             PYTHONUNBUFFERED=1 \
             PYTHONUTF8=1 \
             PYTHONDONTWRITEBYTECODE=1 \
-            "$PYTHON_BIN" "$ORCHESTRATOR_PY" "$@"
+            "$PYTHON_BIN" -s "$ORCHESTRATOR_PY" "$@"
     fi
 
     log RUN "Launching Dusky Orchestrator..."
     exec env \
+        PYTHONNOUSERSITE=1 \
         PYTHONUNBUFFERED=1 \
         PYTHONUTF8=1 \
         PYTHONDONTWRITEBYTECODE=1 \
-        "$PYTHON_BIN" "$ORCHESTRATOR_PY" "$@"
+        "$PYTHON_BIN" -s "$ORCHESTRATOR_PY" "$@"
 }
 
 declare -g network_verified=0
